@@ -4,6 +4,7 @@ import log from 'why-is-node-running';
 console.log("Starting...");
 (async () => {
     await detect();
-    log();
+    //log();
     //process.exit()
 })();
+log();

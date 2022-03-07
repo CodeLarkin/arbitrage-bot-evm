@@ -139,11 +139,20 @@ export async function detect() {
     await Object.values(ROUTERS).forEach(_router => {
         getExchangeRate(_router, ERC20S['SPELL'], ERC20S['WFTM']);
     });
-    logging.info("Done...");
+    logging.info("Done getting basic exchange rates, now peeking pending transactions...");
 
-    PROVIDER.on("pending", (txHash) => {
+    // TODO check pending transactions and once they complete check for resulting arbitrage opportunities
+    // TODO check pending transactions for profitable arbitrage txs to frontrun (need MEV for this?)
+    //      using: PROVIDER.on("pending", (txHash) => {
+    //                 PROVIDER.once(txHash, (transaction) => {
+    //PROVIDER.on("pending", (txHash) => {
+    //    PROVIDER.getTransaction(txHash).then(async tx => {
+    await PROVIDER.on("block", async (blockNumber) => {
         //logging.info(`Pending: ${txHash}`);
-        PROVIDER.getTransaction(txHash).then(async tx => {
+        const block = await PROVIDER.getBlockWithTransactions(blockNumber);
+        const transactions = block.transactions;
+
+        await transactions.forEach(async tx => {
             if (tx && tx.to &&
                   (tx.to == ROUTERS['SUSHISWAP' ].address
                 || tx.to == ROUTERS['SPOOKYSWAP'].address
@@ -151,7 +160,7 @@ export async function detect() {
                 || tx.to == ROUTERS['WAKASWAP'  ].address
                 || tx.to == ROUTERS['HYPERSWAP' ].address
                 || tx.to == ROUTERS['YOSHI'     ].address)) {
-                console.log(`Tx (${tx.hash} uses router ${tx.to}`);
+                console.log(`Tx (${tx.hash}) uses router ${tx.to}`);
                 //ethers.utils.defaultAbiCoder.decode(
                 //    UniswapV2Router02,
                 //    ethers.utils.hexDataSlice(tx.data, 4)
@@ -204,5 +213,6 @@ export async function detect() {
             }
         });
     });
+    logging.info("Done.");
 }
 
