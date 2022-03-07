@@ -1,5 +1,6 @@
 import { ethers, Contract, ContractInterface } from "ethers";
 import { BigNumber } from '@ethersproject/bignumber';
+import abiDecoder from 'abi-decoder';
 
 import { logging } from './logging';
 import ERC20 from "./../abi/ERC20.json";
@@ -48,6 +49,11 @@ const ROUTERS = {
 const ERC20S = {
     "WFTM"  : new ContractInfo("WFTM"      , "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83", ERC20 ),
     "USDC"  : new ContractInfo("USDC"      , "0x04068DA6C83AFCFA0e13ba15A6696662335D5B75", ERC20 ),
+    "DMD"   : new ContractInfo("DMD"       , "0x90E892FED501ae00596448aECF998C88816e5C0F", ERC20 ),
+    "SPIRIT": new ContractInfo("SPIRIT"    , "0x5cc61a78f164885776aa610fb0fe1257df78e59b", ERC20 ),
+    "MIM"   : new ContractInfo("MIM"       , "0x82f0b8b456c1a451378467398982d4834b6829c1", ERC20 ),
+    "DAI"   : new ContractInfo("DAI"       , "0x8d11ec38a3eb5e956b052f67da8bdc9bef8abf3e", ERC20 ),
+    "SPELL" : new ContractInfo("SPELL"     , "0x468003B688943977e6130F4F68F23aad939a1040", ERC20 ),
     //"ECHO"  : new ContractInfo("ECHO"      , "0x54477A1D1bb8C1139eEF754Fd2eFd4DDeE7933dd", ERC20 ),
     //"EYE"   : new ContractInfo("EYE"       , "0x496e1693A7B162c4f0Cd6a1792679cC48EcbCC8d", ERC20 ),
     //"MUNNY" : new ContractInfo("MUNNY"     , "0x195FE0c899434fB47Cd6c1A09ba9DA56A1Cca12C", ERC20 ),
@@ -67,6 +73,8 @@ export function initContracts(_provider, _contractInfos: Record<string, Contract
 initContracts(PROVIDER, ROUTERS);
 initContracts(PROVIDER, ERC20S);
 
+abiDecoder.addABI(UniswapV2Router02);
+
 async function getExchangeRate(_router: ContractInfo, _from: ContractInfo, _to: ContractInfo) {
     const fromDecimals = await _from.contract.decimals();
     const toDecimals   = await _to.contract.decimals();
@@ -76,29 +84,122 @@ async function getExchangeRate(_router: ContractInfo, _from: ContractInfo, _to: 
     const path = [_from.address, _to.address];
 
     logging.ultra(`${_router.name}.getAmountsOut(${oneWhole}, [${_from.address}, ${_to.address}])`);
-    const exchangeRate = (await _router.contract.getAmountsOut(oneWhole, path))[1];
-    const exchangeRateFormatted = ethers.utils.formatUnits(exchangeRate, toDecimals);
+    try {
+        const exchangeRate = (await _router.contract.getAmountsOut(oneWhole, path))[1];
+        const exchangeRateFormatted = ethers.utils.formatUnits(exchangeRate, toDecimals);
 
-    logging.info(`On ${_router.name}, 1 ${_from.name} = ${exchangeRateFormatted} ${_to.name}`);
+        logging.info(`On ${_router.name}, 1 ${_from.name} = ${exchangeRateFormatted} ${_to.name}`);
+    } catch {
+        logging.ultra(`On ${_router.name}, 1 ${_from.name} => ${_to.name}: PAIR NOT FOUND`);
+    }
+}
+
+async function getPathRate(_router: ContractInfo, _from: ContractInfo, _to: ContractInfo, _path: string[]) {
+    const fromDecimals = await _from.contract.decimals();
+    const toDecimals   = await _to.contract.decimals();
+
+    const oneWhole = ethers.utils.parseUnits("1", fromDecimals);
+
+    logging.ultra(`${_router.name}.getAmountsOut(${oneWhole}, [${_path}])`);
+    try {
+        const exchangeRate = (await _router.contract.getAmountsOut(oneWhole, _path))[1];
+        const exchangeRateFormatted = ethers.utils.formatUnits(exchangeRate, toDecimals);
+
+        logging.info(`On ${_router.name}, 1 ${_from.name} = ${exchangeRateFormatted} ${_to.name}`);
+    } catch {
+        logging.ultra(`On ${_router.name}, 1 ${_from.name} => ${_to.name}: PAIR NOT FOUND`);
+    }
 }
 
 export async function detect() {
     logging.info("Detecting...");
 
-    Object.values(ROUTERS).forEach(_router => {
+    await Object.values(ROUTERS).forEach(_router => {
         getExchangeRate(_router, ERC20S['WFTM'], ERC20S['USDC']);
     });
+    await Object.values(ROUTERS).forEach(_router => {
+        getExchangeRate(_router, ERC20S['WFTM'], ERC20S['DAI']);
+    });
+    await Object.values(ROUTERS).forEach(_router => {
+        getExchangeRate(_router, ERC20S['WFTM'], ERC20S['MIM']);
+    });
+
+    await Object.values(ROUTERS).forEach(_router => {
+        getExchangeRate(_router, ERC20S['DMD'], ERC20S['USDC']);
+    });
+    await Object.values(ROUTERS).forEach(_router => {
+        getExchangeRate(_router, ERC20S['DMD'], ERC20S['WFTM']);
+    });
+    await Object.values(ROUTERS).forEach(_router => {
+        getExchangeRate(_router, ERC20S['SPIRIT'], ERC20S['USDC']);
+    });
+    await Object.values(ROUTERS).forEach(_router => {
+        getExchangeRate(_router, ERC20S['SPIRIT'], ERC20S['WFTM']);
+    });
+    await Object.values(ROUTERS).forEach(_router => {
+        getExchangeRate(_router, ERC20S['SPELL'], ERC20S['WFTM']);
+    });
+    logging.info("Done...");
 
     PROVIDER.on("pending", (txHash) => {
         //logging.info(`Pending: ${txHash}`);
-        PROVIDER.getTransaction(txHash).then(tx => {
-            if (tx.to == ROUTERS['SPOOKYSWAP'].address) {
+        PROVIDER.getTransaction(txHash).then(async tx => {
+            if (tx && tx.to == ROUTERS['SUSHISWAP' ].address
+                   || tx.to == ROUTERS['SPOOKYSWAP'].address
+                   || tx.to == ROUTERS['SOULSWAP'  ].address
+                   || tx.to == ROUTERS['WAKASWAP'  ].address
+                   || tx.to == ROUTERS['HYPERSWAP' ].address
+                   || tx.to == ROUTERS['YOSHI'     ].address) {
+                console.log(`Tx (${tx.hash} uses router ${tx.to}`);
                 //ethers.utils.defaultAbiCoder.decode(
                 //    UniswapV2Router02,
                 //    ethers.utils.hexDataSlice(tx.data, 4)
                 //);
-                debugger;
-                console.log(tx);
+                //debugger;
+                //console.log(tx);
+                const decodedData = abiDecoder.decodeMethod(tx.data);
+                logging.ultra(decodedData);
+                if (decodedData.name == 'swapExactETHForTokens' || decodedData.name == 'swapExactTokensForTokens') {
+                    const path = decodedData.params[2].value;
+
+                    let from = path[0];
+                    let to   = path[path.length-1];
+                    if (decodedData.name == 'swapExactETHForTokens') {
+                        from = WFTM_ADDRESS;
+                        to   = path;
+                    }
+
+                    console.log(`Decoded method: ${decodedData.name} - From0: ${from} - To0: ${to}`);
+                    console.log(`Path: ${path}`);
+
+                    const fromContract = new ethers.Contract(from, ERC20, PROVIDER);
+                    const toContract   = new ethers.Contract(to,   ERC20, PROVIDER);
+
+                    try {
+                        const fromName = await fromContract.symbol();
+                        const toName   = await toContract.symbol();
+
+                        console.log(`From: ${fromName}:${from}`);
+                        console.log(`To:   ${toName}:${to}`);
+                        console.log(`Path: ${path}`);
+
+                        ERC20S[fromName] = new ContractInfo(fromName, from, ERC20);
+                        ERC20S[fromName].contract = fromContract;
+                        ERC20S[toName]   = new ContractInfo(toName, to, ERC20);
+                        ERC20S[toName].contract   = toContract;
+
+                        await Object.values(ROUTERS).forEach(_router => {
+                            getPathRate(_router, ERC20S[fromName], ERC20S[toName], path);
+                        });
+                        await Object.values(ROUTERS).forEach(_router => {
+                            getExchangeRate(_router, ERC20S[fromName], ERC20S['WFTM']);
+                        });
+                        // TODO check all other pairs with tokens in this path
+                    } catch (e) {
+                        console.log(`Skipping path: ${path} ...`);
+                        //console.log(e);
+                    }
+                }
             }
         });
     });
