@@ -144,12 +144,13 @@ export async function detect() {
     PROVIDER.on("pending", (txHash) => {
         //logging.info(`Pending: ${txHash}`);
         PROVIDER.getTransaction(txHash).then(async tx => {
-            if (tx && tx.to == ROUTERS['SUSHISWAP' ].address
-                   || tx.to == ROUTERS['SPOOKYSWAP'].address
-                   || tx.to == ROUTERS['SOULSWAP'  ].address
-                   || tx.to == ROUTERS['WAKASWAP'  ].address
-                   || tx.to == ROUTERS['HYPERSWAP' ].address
-                   || tx.to == ROUTERS['YOSHI'     ].address) {
+            if (tx && tx.to &&
+                  (tx.to == ROUTERS['SUSHISWAP' ].address
+                || tx.to == ROUTERS['SPOOKYSWAP'].address
+                || tx.to == ROUTERS['SOULSWAP'  ].address
+                || tx.to == ROUTERS['WAKASWAP'  ].address
+                || tx.to == ROUTERS['HYPERSWAP' ].address
+                || tx.to == ROUTERS['YOSHI'     ].address)) {
                 console.log(`Tx (${tx.hash} uses router ${tx.to}`);
                 //ethers.utils.defaultAbiCoder.decode(
                 //    UniswapV2Router02,
