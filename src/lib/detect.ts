@@ -17,6 +17,9 @@ import UniswapV2Pair from "./../abi/UniswapV2Pair.json";
 const RPC = "wss://speedy-nodes-nyc.moralis.io/4fa94a12b834aecf2526bd68/fantom/mainnet/ws";
 const PROVIDER = new ethers.providers.WebSocketProvider(RPC);
 
+if (!process.env.PRIVK) {
+    throw Error("No wallet found in env");
+}
 const WALLET = new ethers.Wallet(process.env.PRIVK, PROVIDER);
 
 // Addresses
@@ -96,6 +99,16 @@ class Pair {
         ];
     }
 
+    getNormReservesForTok(_tok: string) {
+        if (_tok == this.token0) {
+            return Number(ethers.utils.formatUnits(this.reserves0, this.decimals0));
+        } else if (_tok == this.token1) {
+            return Number(ethers.utils.formatUnits(this.reserves1, this.decimals1));
+        }
+        throw Error(`Can't get reserves for token ${_tok} - not in pair`);
+    }
+
+
     //getPrice() : number {
     //    const reserves = this.getNormReserves();
     //    return reserves[0] / reserves[1];
@@ -165,7 +178,6 @@ abiDecoder.addABI(UniswapV2Router02);
 
 
 const loadPairs = async (_factory: Contract, _tok0: string, _tok1: string) => {
-    console.log("0");
     return new ethers.Contract(
         await _factory.getPair(_tok0, _tok1),
         UniswapV2Pair, WALLET,
@@ -177,6 +189,7 @@ async function getTradingPair(_dex: string, _from: ContractInfo, _to: ContractIn
     try {
         return await getTradingPairAux(_dex, _from, _to);
     } catch (e) {
+        logging.ultra(e);
         logging.ultra("Pair does not exist");
     }
 }
@@ -254,31 +267,31 @@ async function getPathRate(_router: ContractInfo, _from: ContractInfo, _to: Cont
 export async function detect() {
     logging.info("Detecting...");
 
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['WFTM'], ERC20S['USDC']);
-    });
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['WFTM'], ERC20S['DAI']);
-    });
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['WFTM'], ERC20S['MIM']);
-    });
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['WFTM'], ERC20S['USDC']);
+    //});
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['WFTM'], ERC20S['DAI']);
+    //});
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['WFTM'], ERC20S['MIM']);
+    //});
 
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['DMD'], ERC20S['USDC']);
-    });
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['DMD'], ERC20S['WFTM']);
-    });
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['SPIRIT'], ERC20S['USDC']);
-    });
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['SPIRIT'], ERC20S['WFTM']);
-    });
-    await Object.keys(ROUTERS).forEach(_dex => {
-        getTradingPair(_dex, ERC20S['SPELL'], ERC20S['WFTM']);
-    });
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['DMD'], ERC20S['USDC']);
+    //});
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['DMD'], ERC20S['WFTM']);
+    //});
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['SPIRIT'], ERC20S['USDC']);
+    //});
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['SPIRIT'], ERC20S['WFTM']);
+    //});
+    //await Object.keys(ROUTERS).forEach(_dex => {
+    //    getTradingPair(_dex, ERC20S['SPELL'], ERC20S['WFTM']);
+    //});
     logging.info("Done getting basic exchange rates, now peeking pending transactions...");
 
     // TODO check pending transactions and once they complete check for resulting arbitrage opportunities
@@ -287,98 +300,134 @@ export async function detect() {
     //                 PROVIDER.once(txHash, (transaction) => {
     //PROVIDER.on("pending", (txHash) => {
     //    PROVIDER.getTransaction(txHash).then(async tx => {
-    await PROVIDER.on("block", async (blockNumber) => {
-        //logging.info(`Pending: ${txHash}`);
-        const block = await PROVIDER.getBlockWithTransactions(blockNumber);
-        const transactions = block.transactions;
+    PROVIDER.on("block", async (blockNumber) => {
+        logging.info("COUNTME");
+        try {
+            //logging.info(`Pending: ${txHash}`);
+            const block = await PROVIDER.getBlockWithTransactions(blockNumber);
+            const transactions = block.transactions;
 
-        await transactions.forEach(async tx => {
-            if (tx && tx.to &&
-                  (tx.to == ROUTERS['SUSHISWAP' ].address
-                || tx.to == ROUTERS['SPOOKYSWAP'].address
-                || tx.to == ROUTERS['SOULSWAP'  ].address
-                || tx.to == ROUTERS['WAKASWAP'  ].address
-                || tx.to == ROUTERS['HYPERSWAP' ].address)) {
-                //|| tx.to == ROUTERS['YOSHI'     ].address)) {
-                console.log(`Tx (${tx.hash}) uses router ${tx.to}`);
-                //ethers.utils.defaultAbiCoder.decode(
-                //    UniswapV2Router02,
-                //    ethers.utils.hexDataSlice(tx.data, 4)
-                //);
-                //debugger;
-                //console.log(tx);
-                const decodedData = abiDecoder.decodeMethod(tx.data);
-                logging.ultra(decodedData);
-                if (decodedData.name == 'swapExactETHForTokens' || decodedData.name == 'swapExactTokensForTokens') {
-                    const path = decodedData.params[2].value;
-
-                    let from = path[0];
-                    let to   = path[path.length-1];
-                    if (decodedData.name == 'swapExactETHForTokens') {
-                        from = WFTM_ADDRESS;
-                        to   = path;
-                    }
-
-                    console.log(`Decoded method: ${decodedData.name} - From0: ${from} - To0: ${to}`);
-                    console.log(`Path: ${path}`);
-
-                    const fromContract = new ethers.Contract(from, ERC20, WALLET);
-                    const toContract   = new ethers.Contract(to,   ERC20, WALLET);
-
-                    try {
-                        const fromName = await fromContract.symbol();
-                        //console.log(`HERERERE: ${await toContract.symbol()}`);
-                        const toName   = await toContract.symbol();
-
-                        console.log(`From: ${fromName}:${from}`);
-                        console.log(`To:   ${toName}:${to}`);
-                        console.log(`Path: ${path}`);
-
-                        ERC20S[fromName] = new ContractInfo(fromName, from, ERC20);
-                        ERC20S[fromName].contract = fromContract;
-                        ERC20S[toName]   = new ContractInfo(toName, to, ERC20);
-                        ERC20S[toName].contract   = toContract;
-
-                        //await Object.values(ROUTERS).forEach(_router => {
-                        //    getPathRate(_router, ERC20S[fromName], ERC20S[toName], path);
-                        //});
-                        const pairs: Pair[] = [];
-                        for (let i = 0; i < NUM_DEXS; i++) {
-                            pairs.push(await getTradingPair(DEXS[i], ERC20S[fromName], ERC20S['WFTM']));
+            await transactions.forEach(async tx => {
+                if (tx && tx.to &&
+                      (tx.to == ROUTERS['SUSHISWAP' ].address
+                    || tx.to == ROUTERS['SPOOKYSWAP'].address
+                    || tx.to == ROUTERS['SOULSWAP'  ].address
+                    || tx.to == ROUTERS['WAKASWAP'  ].address
+                    || tx.to == ROUTERS['HYPERSWAP' ].address)) {
+                    //|| tx.to == ROUTERS['YOSHI'     ].address)) {
+                    logging.debug(`Tx (${tx.hash}) uses router ${tx.to}`);
+                    //ethers.utils.defaultAbiCoder.decode(
+                    //    UniswapV2Router02,
+                    //    ethers.utils.hexDataSlice(tx.data, 4)
+                    //);
+                    //debugger;
+                    //console.log(tx);
+                    const decodedData = abiDecoder.decodeMethod(tx.data);
+                    logging.ultra(decodedData);
+                    if (decodedData.name == 'swapExactETHForTokens' || decodedData.name == 'swapExactTokensForTokens') {
+                        logging.ultra(decodedData);
+                        let path = decodedData.params[2].value;
+                        if (decodedData.name == 'swapExactETHForTokens') {
+                            path = decodedData.params[1].value;
                         }
-                        //const pairs = Object.keys(ROUTERS).map(_dex => {
-                        //    getTradingPair(_dex, ERC20S[fromName], ERC20S['WFTM']);
-                        //});
-                        for(let i = 0; i < NUM_DEXS; i++) {
-                            for(let j = 0; j < NUM_DEXS; j++) {
-                                if (i != j) { // check router pair i,j
-                                    //pairs[i].getPrice() / pairs[j].getPrice();
-                                    const priceI = pairs[i].getPrice();
-                                    const priceJ = pairs[j].getPrice();
 
-                                    // FIXME rename
-                                    const shouldStartEth = priceI < priceJ;
-                                    const spread = Math.abs((priceJ / priceI - 1) * 100) - 0.6;
-                                    console.log(`Price I: ${priceI}, Price J: ${priceJ}`);
-                                    console.log(`SPREAD: ${spread}`);
+                        let from = path[0];
+                        let to   = path[path.length-1];
 
-                                    //const shouldTrade = spread > (
-                                    //  (shouldStartEth ? ETH_TRADE : DAI_TRADE)
-                                    //   / Number(
-                                    //     ethers.utils.formatEther(uniswapReserves[shouldStartEth ? 1 : 0]),
-                                    //   ));
-                                }
+                        logging.debug(`Decoded method: ${decodedData.name} - From0: ${from} - To0: ${to}`);
+                        logging.debug(`Path: ${path}`);
+
+                        const fromContract = new ethers.Contract(from, ERC20, WALLET);
+                        const toContract   = new ethers.Contract(to,   ERC20, WALLET);
+
+                        //try {
+                            const fromName = await fromContract.symbol();
+                            //console.log(`HERERERE: ${await toContract.symbol()}`);
+                            const toName   = await toContract.symbol();
+
+                            logging.debug(`From: ${fromName}:${from}`);
+                            logging.debug(`To:   ${toName}:${to}`);
+                            logging.debug(`Path: ${path}`);
+
+                            ERC20S[fromName] = new ContractInfo(fromName, from, ERC20);
+                            ERC20S[fromName].contract = fromContract;
+                            ERC20S[toName]   = new ContractInfo(toName, to, ERC20);
+                            ERC20S[toName].contract   = toContract;
+
+                            //await Object.values(ROUTERS).forEach(_router => {
+                            //    getPathRate(_router, ERC20S[fromName], ERC20S[toName], path);
+                            //});
+
+                            const toToks = ['WFTM'];
+                            if (path.length == 2) {
+                                console.log(`Also checking token paired against ${toName}`);
+                                toToks.push(toName);
                             }
-                        }
-                        // TODO check all other pairs with tokens in this path
-                    } catch (e) {
-                        console.log(`Skipping path: ${path} ...`);
-                        //console.log(e);
+
+                            toToks.forEach(async toTok => {
+                                const pairs: Pair[] = []; // one per DEX
+                                for (let i = 0; i < NUM_DEXS; i++) {
+                                    try {
+                                        pairs.push(await getTradingPair(DEXS[i], ERC20S[fromName], ERC20S[toTok]));
+                                    } catch (e) {
+                                        logging.info(`Pair not found on ${DEXS[i]}`);
+                                    }
+                                }
+                                //const pairs = Object.keys(ROUTERS).map(_dex => {
+                                //    getTradingPair(_dex, ERC20S[fromName], ERC20S['WFTM']);
+                                //});
+                                logging.info(`Searching for arbitrage opportunities for pair [${fromName}, ${toTok}]`);
+                                for(let i = 0; i < NUM_DEXS; i++) {
+                                    if (!pairs[i]) continue;
+                                    const priceI = pairs[i].getPrice();
+                                    for(let j = 0; j < NUM_DEXS; j++) {
+                                        if (i != j) { // check router pair i,j
+                                            if (!pairs[j]) continue;
+                                            //pairs[i].getPrice() / pairs[j].getPrice();
+                                            const priceJ = pairs[j].getPrice();
+
+                                            // FIXME rename
+                                            const shouldStartEth = priceI < priceJ;
+                                            const spread = Math.abs((priceJ / priceI - 1) * 100) - 0.6;
+                                            if (spread > 1) {
+                                                const reservesI = pairs[i].getNormReserves();
+                                                const reservesJ = pairs[j].getNormReserves();
+                                                // only proceed if reserves for one is > 100, and both are > 1
+                                                //if (((reservesI[0] > 100 || reservesI[1] > 100) && (reservesI[0] > 1 && reservesI[1] > 1)) &&
+                                                //    ((reservesJ[0] > 100 || reservesJ[1] > 100) && (reservesJ[0] > 1 && reservesJ[1] > 1))) {
+                                                if ((reservesI[0] > 100 && reservesI[1] > 100) &&
+                                                    (reservesJ[0] > 100 && reservesJ[1] > 100)) {
+                                                    logging.info("====================================================================");
+                                                    logging.info(`Arbitrage opportunity found between DEXs: [${DEXS[i]}, ${DEXS[j]}]`);
+                                                    logging.info(`Price on ${DEXS[i]} I: ${priceI}, Price on ${DEXS[j]}: ${priceJ}`);
+                                                    logging.info(`SPREAD: ${spread}`);
+                                                    logging.info(`Reserves on ${DEXS[i]}: ${reservesI[0]}, ${reservesI[1]}`);
+                                                    logging.info(`Reserves on ${DEXS[j]}: ${reservesJ[0]}, ${reservesJ[1]}`);
+                                                    logging.info("====================================================================");
+                                                }
+                                            }
+
+                                            //const shouldTrade = spread > (
+                                            //  (shouldStartEth ? ETH_TRADE : DAI_TRADE)
+                                            //   / Number(
+                                            //     ethers.utils.formatEther(uniswapReserves[shouldStartEth ? 1 : 0]),
+                                            //   ));
+                                        }
+                                    }
+                                }
+                            });
+                            // TODO check all other pairs with tokens in this path
+                        //} catch (e) {
+                        //    console.log(`Skipping path: ${path} ...`);
+                        //    //console.log(e);
+                        //}
                     }
                 }
-            }
         });
+        } catch (e) {
+            logging.info("error, skipping .....................");
+        }
     });
-    logging.info("Done.");
+    //logging.info("Done.");
 }
 
